@@ -9,6 +9,13 @@ use tame_oauth::{Error, Token};
 struct TokenResponse {
     /// The actual token
     access_token: String,
+
+    /// A refresh token which may or may not have been returned by the provider
+    refresh_token: Option<String>,
+
+    /// The id token - could potentially be None from some providers?
+    id_token: String,
+
     /// The token type - most often `bearer`
     token_type: String,
     /// The time until the token expires and a new one needs to be requested
@@ -21,10 +28,16 @@ impl Into<Token> for TokenResponse {
     fn into(self) -> Token {
         let expires_ts = chrono::Utc::now().timestamp() + self.expires_in;
 
+        let refresh_token = if self.refresh_token.is_some() {
+            self.refresh_token.unwrap()
+        } else {
+            "".to_string()
+        };
+
         Token {
             access_token: self.access_token,
             token_type: self.token_type,
-            refresh_token: String::new(),
+            refresh_token,
             expires_in: Some(self.expires_in),
             expires_in_timestamp: Some(expires_ts),
         }
@@ -45,6 +58,7 @@ struct EmbarkTokenExchangeRequest {
 struct EmbarkTokenResponse {
     id_token: String,
     access_token: String,
+    refresh_token: String,
     token_type: String,
     scope: String,
     expires_in: i64,
@@ -90,17 +104,6 @@ where
     let (parts, body) = response.into_parts();
 
     if !parts.status.is_success() {
-        if parts
-            .headers
-            .get(http::header::CONTENT_TYPE)
-            .and_then(|ct| ct.to_str().ok())
-            == Some("application/json; charset=utf-8")
-        {
-            // if let Ok(auth_error) = serde_json::from_slice::<tame_oauth::AuthError>(body_bytes) {
-            //     return Err(Error::AuthError(auth_error));
-            // }
-        }
-
         return Err(Error::HttpStatus(parts.status));
     }
 
